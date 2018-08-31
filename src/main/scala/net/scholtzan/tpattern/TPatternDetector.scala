@@ -72,6 +72,11 @@ abstract class TPatternDetector (
   def getSubpatternDifference: Int = subPatternDifference
 
 
+  /** Sets the minimum difference for a subpattern to be considered as separate pattern.
+    * (default = 10)
+    *
+    * @return updated instance
+    */
   def setSubpatternDifference(subpatternDifference: Int): this.type = {
     require(subpatternDifference >= 0)
     this.subPatternDifference = subpatternDifference
@@ -110,10 +115,18 @@ abstract class TPatternDetector (
   }
 
 
+  /**
+    * Determine T-Patterns from previously detected and generated patterns.
+    *
+    * @param detectedPatterns previously detected T-Patterns
+    * @param newPatterns  newly generated patterns
+    * @param len  length of the previously detect T-Patterns
+    * @return generated T-Patterns
+    */
   protected def constructTPatterns(detectedPatterns: Seq[TPattern], newPatterns: Seq[TPattern], len: Int): Seq[TPattern] = {
     // first stage: create patterns from event types
     val patterns = constructPatterns(detectedPatterns, newPatterns)
-    val tPatterns = detectTPatterns(patterns)   // todo: free, fast
+    val tPatterns = detectTPatterns(patterns)
     val validatedTPatterns = completenessCompetition(detectedPatterns ++ tPatterns)
 
     val newDetectedPatterns = validatedTPatterns.filter(_.features.length == len + 1)
@@ -152,7 +165,8 @@ abstract class TPatternDetector (
   }
 
 
-  /** Create a table of distances between two patterns.
+  /**
+    * Create a table of distances between two patterns.
     *
     * @param patterns two patterns
     * @return distance table
@@ -168,18 +182,35 @@ abstract class TPatternDetector (
 
     // remove duplicates
     // if different A are followed by same B then they are not included in the table (only shortest)
-    // also A must only occur once .groupBy(_._1).map(_._2.minBy(_._3)).toList
+    // also A must only occur once
     tableWithDuplicates.groupBy(_._2).map(_._2.minBy(_._3)).toList.groupBy(_._1).map(_._2.minBy(_._3)).toList
   }
 
 
-  /** Critical interval test. */
+  /** Critical interval test.
+    *
+    * @param d1 start time unit after which second event type is starting
+    * @param d2 end time unit before which second event type is starting
+    * @param nB number of occurrences of second event types
+    * @param nA number of occurrences of first event types
+    * @param nAB  number of occurrences where first event type follows second
+    * @return whether it is a critical interval
+    */
   protected def isCriticalInterval(d1: Double, d2: Double, nB: Double, nA: Int, nAB: Int): Boolean = {
     significance(d1, d2, nB, nA, nAB) < significance
   }
 
 
-  /** Calculates the significance of two pattern occurrences. */
+  /**
+    * Calculates the significance of two pattern occurrences.
+    *
+    * @param d1 start time unit after which second event type is starting
+    * @param d2 end time unit before which second event type is starting
+    * @param nB number of occurrences of second event types
+    * @param nA number of occurrences of first event types
+    * @param nAB  number of occurrences where first event type follows second
+    * @return significance
+    */
   protected def significance(d1: Double, d2: Double, nB: Double, nA: Int, nAB: Int): Double = {
     val pB = nB / events.length
     val d = d2 - d1
