@@ -85,7 +85,7 @@ abstract class TPatternDetector (
     * @param events input events
     * @return trivial patterns the conform to completeness competition
     */
-  private def trivialPatterns(events: Seq[Event]): Seq[TPattern] = {
+  protected def constructTrivialPatterns(events: Seq[Event]): Seq[TPattern] = {
     val trivialPatterns = events.groupBy(_.features).map { case (features, correspondingEvents) =>
       TPattern(0, 0, Seq(features), correspondingEvents.map(e => (e.startTime, e.endTime)))
     }.toList
@@ -102,7 +102,7 @@ abstract class TPatternDetector (
     * @param patterns TPatterns checked for completeness
     * @return TPatterns that fulfill the completeness competition
     */
-  private def completenessCompetition(patterns: Seq[TPattern]): Seq[TPattern] = {
+  protected def completenessCompetition(patterns: Seq[TPattern]): Seq[TPattern] = {
     // remove redundant patterns
     patterns.filter(_.occurrences.length > minimumOccurrences).groupBy(_.features).map { case (apps, tPatterns) =>
       tPatterns.head
@@ -110,10 +110,10 @@ abstract class TPatternDetector (
   }
 
 
-  private def constructTPatterns(detectedPatterns: Seq[TPattern], newPatterns: Seq[TPattern], len: Int): Seq[TPattern] = {
+  protected def constructTPatterns(detectedPatterns: Seq[TPattern], newPatterns: Seq[TPattern], len: Int): Seq[TPattern] = {
     // first stage: create patterns from event types
     val patterns = constructPatterns(detectedPatterns, newPatterns)
-    val tPatterns = detectTPatterns(patterns)
+    val tPatterns = detectTPatterns(patterns)   // todo: free, fast
     val validatedTPatterns = completenessCompetition(detectedPatterns ++ tPatterns)
 
     val newDetectedPatterns = validatedTPatterns.filter(_.features.length == len + 1)
@@ -126,20 +126,22 @@ abstract class TPatternDetector (
   }
 
 
-  /** Based on already detected patterns, construct the next patterns.
+  /**
+    * Based on already detected patterns, construct the next patterns by merging them.
+    *
     * @param previousPatterns   previously detected patterns
     * @param latestPatterns   most recently detected patterns
     * @return   list of previously detected patterns and the newly created patterns
     */
-  private def constructPatterns(previousPatterns: Seq[TPattern], latestPatterns: Seq[TPattern]): Seq[(TPattern, TPattern)] = {
-    latestPatterns.flatMap(lp => previousPatterns.flatMap { pp =>
-      if (pp != lp) {
-        if (pp.features.last != lp.features.head && pp.features.head != lp.features.last) {
-          Some(List((pp, lp), (lp, pp)))
-        } else if (pp.features.last == lp.features.head && pp.features.head != lp.features.last) {
-          Some(List((lp, pp)))
-        } else if (pp.features.last != lp.features.head && pp.features.head == lp.features.last) {
-          Some(List((pp, lp)))
+  protected def constructPatterns(previousPatterns: Seq[TPattern], latestPatterns: Seq[TPattern]): Seq[(TPattern, TPattern)] = {
+    latestPatterns.flatMap(latestPattern => previousPatterns.flatMap { previousPattern =>
+      if (previousPattern != latestPattern) {
+        if (previousPattern.features.last != latestPattern.features.head && previousPattern.features.head != latestPattern.features.last) {
+          Some(List((previousPattern, latestPattern), (latestPattern, previousPattern)))
+        } else if (previousPattern.features.last == latestPattern.features.head && previousPattern.features.head != latestPattern.features.last) {
+          Some(List((latestPattern, previousPattern)))
+        } else if (previousPattern.features.last != latestPattern.features.head && previousPattern.features.head == latestPattern.features.last) {
+          Some(List((previousPattern, latestPattern)))
         } else {
           None
         }
@@ -150,41 +152,12 @@ abstract class TPatternDetector (
   }
 
 
-  /** Detection of fast and free intervals. */
-  private def detectTPatterns(patterns: Seq[(TPattern, TPattern)]): Seq[TPattern] = {
-    patterns.flatMap { pattern =>
-      // create distance table
-      val table = createDistanceTable(pattern).sortBy(_._3).reverse
-      val d1 = 0
-      val nB = pattern._2.occurrences.length
-      val nA = pattern._1.occurrences.length
-
-      val insignificant = table.takeWhile(d2 =>
-        !isCriticalInterval(d1, d2._3, nB, nA, table.length)
-      )
-
-      val significantPatterns = table.drop(insignificant.length)
-
-      if (significantPatterns.nonEmpty) {
-        Some(TPattern(
-          d1,
-          significantPatterns.head._3, // first significant distance
-          pattern._1.features ++ pattern._2.features,
-          significantPatterns.map(x => (x._1, x._2))
-        ))
-      } else {
-        None
-      }
-    }
-  }
-
-
   /** Create a table of distances between two patterns.
     *
     * @param patterns two patterns
     * @return distance table
     */
-  private def createDistanceTable(patterns: (TPattern, TPattern)): Seq[(DateTime, DateTime, Double)] = {
+  protected def createDistanceTable(patterns: (TPattern, TPattern)): Seq[(DateTime, DateTime, Double)] = {
     // generate table with occurrences and distances between occurrences
     val tableWithDuplicates = patterns._1.occurrences.flatMap { startOccurrence =>
       patterns._2.occurrences.find(x => seconds(x._1) > seconds(startOccurrence._2)) match {
@@ -201,13 +174,13 @@ abstract class TPatternDetector (
 
 
   /** Critical interval test. */
-  private def isCriticalInterval(d1: Double, d2: Double, nB: Double, nA: Int, nAB: Int): Boolean = {
+  protected def isCriticalInterval(d1: Double, d2: Double, nB: Double, nA: Int, nAB: Int): Boolean = {
     significance(d1, d2, nB, nA, nAB) < significance
   }
 
 
   /** Calculates the significance of two pattern occurrences. */
-  private def significance(d1: Double, d2: Double, nB: Double, nA: Int, nAB: Int): Double = {
+  protected def significance(d1: Double, d2: Double, nB: Double, nA: Int, nAB: Int): Double = {
     val pB = nB / events.length
     val d = d2 - d1
 
@@ -217,7 +190,26 @@ abstract class TPatternDetector (
   }
 
 
-  def detect(events: Seq[Event]): Seq[TPattern]
+  /**
+    * Uses free or fast algorithm for detecting T-Patterns.
+    *
+    * @param events input events
+    * @return detected T-Patterns
+    */
+  def detect(events: Seq[Event]): Seq[TPattern] = {
+    this.events = events
+    val trivialPatterns = constructTrivialPatterns(events)
+    constructTPatterns(trivialPatterns, trivialPatterns, 1)
+  }
+
+
+  /**
+    * Detects T-Patterns.
+    *
+    * @param patterns potential T-Patterns
+    * @return detected T-Patterns
+    */
+  protected def detectTPatterns(patterns: Seq[(TPattern, TPattern)]): Seq[TPattern]
 }
 
 
@@ -226,15 +218,47 @@ abstract class TPatternDetector (
   */
 class FreeTPatternDetector extends TPatternDetector {
   /**
-    * Uses free algorithm for detecting T-Patterns.
+    * Uses free algorithm to detect T-Patterns.
     *
-    * @param events input events
+    * @param patterns potential T-Patterns
     * @return detected T-Patterns
     */
-  override def detect(events: Seq[Event]): Seq[TPattern] = {
-    this.events = events
+  override protected def detectTPatterns(patterns: Seq[(TPattern, TPattern)]): Seq[TPattern] = {
+    patterns.flatMap { pattern =>
+      // create distance table
+      var table = createDistanceTable(pattern).sortBy(_._3).reverse
 
-    Seq()
+      val nB = pattern._2.occurrences.length
+      val nA = pattern._1.occurrences.length
+
+      if (table.nonEmpty) {
+        var d1 = table.head._3
+        var d2 = table.last._3
+
+        while (!isCriticalInterval(d1, d2, nB, nA, table.length) && table.nonEmpty) {
+          if (significance(d1, table.last._3, nB, nA, table.length) < significance(table.head._3, d2, nB, nA, table.length)) {
+            d2 = table.last._3
+            table = table.init
+          } else {
+            d1 = table.head._3
+            table = table.tail
+          }
+        }
+      }
+
+      val significantPatterns = table
+
+      if (significantPatterns.nonEmpty) {
+        Some(TPattern(
+          significantPatterns.head._3,
+          significantPatterns.last._3, // first significant distance
+          pattern._1.features ++ pattern._2.features,
+          significantPatterns.map(x => (x._1, x._2))
+        ))
+      } else {
+        None
+      }
+    }
   }
 }
 
@@ -244,15 +268,37 @@ class FreeTPatternDetector extends TPatternDetector {
   */
 class FastTPatternDetector extends TPatternDetector {
   /**
-    * Uses fast algorithm for detecting T-Patterns.
+    * Uses fast algorithm to detect T-Patterns.
     *
-    * @param events input events
+    * @param patterns potential T-Patterns
     * @return detected T-Patterns
     */
-  override def detect(events: Seq[Event]): Seq[TPattern] = {
-    this.events = events
+  override protected def detectTPatterns(patterns: Seq[(TPattern, TPattern)]): Seq[TPattern] = {
+    patterns.flatMap { pattern =>
+      // create distance table
+      val table = createDistanceTable(pattern).sortBy(_._3).reverse
+      val d1 = 0
+      val nB = pattern._2.occurrences.length
+      val nA = pattern._1.occurrences.length
 
-    Seq()
+      // determine significant patterns
+      val insignificant = table.takeWhile(d2 =>
+        !isCriticalInterval(d1, d2._3, nB, nA, table.length)
+      )
+
+      val significantPatterns = table.drop(insignificant.length)
+
+      // get T-Patterns
+      if (significantPatterns.nonEmpty) {
+        Some(TPattern(
+          d1,
+          significantPatterns.head._3, // first significant distance
+          pattern._1.features ++ pattern._2.features,
+          significantPatterns.map(x => (x._1, x._2))
+        ))
+      } else {
+        None
+      }
+    }
   }
-
 }
