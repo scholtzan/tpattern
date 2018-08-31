@@ -11,7 +11,7 @@ import net.scholtzan.tpattern.utils.DateTimeUtils._
 abstract class TPatternDetector (
   private var significance: Double,
   private var minimumOccurrences: Int,
-  private var subPatternDifference: Int) {
+  private var subPatternThreshold: Double) {
 
 
   /** Events to be analyzed. */
@@ -21,7 +21,7 @@ abstract class TPatternDetector (
   /**
     * Construct instance with default values.
     */
-  def this() = this(0.00001, 20, 10)
+  def this() = this(0.00001, 20, 0.7)
 
 
   /**
@@ -63,25 +63,45 @@ abstract class TPatternDetector (
 
 
   /**
-    * Difference in number of occurrences between potential sub pattern and pattern.
-    * This parameter is used to decide whether a sub pattern of another pattern. If
-    * the patterns are identical however their difference in occurrences is larger
-    * than this parameter, then they are considered as separate patterns. Otherwise
-    * they are merged into one pattern.
+    * Threshold that sub pattern needs to exceed to be considered as separate pattern.
+    * This threshold is defined for a pattern A that is sup pattern of B as:
+    * number of occurrences of A overlapping with B / total occurrences of A
     */
-  def getSubpatternDifference: Int = subPatternDifference
+  def getSubpatternThreshold: Double = subPatternThreshold
 
 
-  /** Sets the minimum difference for a subpattern to be considered as separate pattern.
-    * (default = 10)
+  /** Sets the minimum threshold for a sub pattern to be considered as separate pattern.
+    * (default = 0.7)
     *
     * @return updated instance
     */
-  def setSubpatternDifference(subpatternDifference: Int): this.type = {
-    require(subpatternDifference >= 0)
-    this.subPatternDifference = subpatternDifference
+  def setSubPatternDifference(subPatternThreshold: Double): this.type = {
+    require(subPatternThreshold >= 0.0 && subPatternThreshold <= 1.0)
+    this.subPatternThreshold = subPatternThreshold
     this
   }
+
+
+  /**
+    * Uses free or fast algorithm for detecting T-Patterns.
+    *
+    * @param events input events
+    * @return detected T-Patterns
+    */
+  def detect(events: Seq[Event]): Seq[TPattern] = {
+    this.events = events
+    val trivialPatterns = constructTrivialPatterns(events)
+    constructTPatterns(trivialPatterns, trivialPatterns, 1)
+  }
+
+
+  /**
+    * Abstract method for detecting T-Patterns.
+    *
+    * @param patterns potential T-Patterns
+    * @return detected T-Patterns
+    */
+  protected def detectTPatterns(patterns: Seq[(TPattern, TPattern)]): Seq[TPattern]
 
 
   /**
@@ -109,9 +129,33 @@ abstract class TPatternDetector (
     */
   protected def completenessCompetition(patterns: Seq[TPattern]): Seq[TPattern] = {
     // remove redundant patterns
-    patterns.filter(_.occurrences.length > minimumOccurrences).groupBy(_.features).map { case (apps, tPatterns) =>
-      tPatterns.head
-    }.toList
+    val distinctPatterns = patterns.filter(_.occurrences.length > minimumOccurrences).distinct
+    mergePatterns(distinctPatterns)
+  }
+
+
+  /** Merges patterns that are sub patterns of another pattern into it based on [todo].
+    *
+    * @param patterns patterns to be merged
+    * @return merged patterns
+    */
+  private def mergePatterns(patterns: Seq[TPattern]): Seq[TPattern] = {
+    patterns.flatMap { pattern =>
+      // maximum number of occurrences that pattern is sub pattern of another pattern
+      val maxOverlap = patterns.filter(_ != pattern).map { parent =>
+        if (isSubPattern(parent, pattern)) {
+          pattern.overlappingOccurrences(parent).length
+        } else {
+          0
+        }
+      }.max.toDouble / pattern.occurrences.length.toDouble
+
+      if (maxOverlap >= subPatternThreshold) {
+        Some(pattern)
+      } else {
+        None
+      }
+    }
   }
 
 
@@ -128,7 +172,6 @@ abstract class TPatternDetector (
     val patterns = constructPatterns(detectedPatterns, newPatterns)
     val tPatterns = detectTPatterns(patterns)
     val validatedTPatterns = completenessCompetition(detectedPatterns ++ tPatterns)
-
     val newDetectedPatterns = validatedTPatterns.filter(_.features.length == len + 1)
 
     if (newDetectedPatterns.isEmpty) {
@@ -174,7 +217,7 @@ abstract class TPatternDetector (
   protected def createDistanceTable(patterns: (TPattern, TPattern)): Seq[(DateTime, DateTime, Double)] = {
     // generate table with occurrences and distances between occurrences
     val tableWithDuplicates = patterns._1.occurrences.flatMap { startOccurrence =>
-      patterns._2.occurrences.find(x => seconds(x._1) > seconds(startOccurrence._2)) match {
+      patterns._2.occurrences.find(x => seconds(x._1) > seconds(startOccurrence._1)) match {
         case Some(occurrence) => Some((startOccurrence._1, occurrence._2, seconds(occurrence._1) - seconds(startOccurrence._2)))
         case _ => None
       }
@@ -213,34 +256,20 @@ abstract class TPatternDetector (
     */
   protected def significance(d1: Double, d2: Double, nB: Double, nA: Int, nAB: Int): Double = {
     val pB = nB / events.length
-    val d = d2 - d1
+    val d = d2 - d1 + 1
 
     1 - (0 until nAB).foldLeft(0.0) { (acc, i) =>
-      acc + Binomial(nA, scala.math.pow(1 - pB, d)).probabilityOf(i)
+      acc + Binomial(nA, 1 - scala.math.pow(1 - pB, d)).probabilityOf(i)
     }
   }
 
 
   /**
-    * Uses free or fast algorithm for detecting T-Patterns.
-    *
-    * @param events input events
-    * @return detected T-Patterns
+    *  Checks whether `subPattern` is contained in `pattern`.
     */
-  def detect(events: Seq[Event]): Seq[TPattern] = {
-    this.events = events
-    val trivialPatterns = constructTrivialPatterns(events)
-    constructTPatterns(trivialPatterns, trivialPatterns, 1)
+  protected def isSubPattern(pattern: TPattern, subPattern: TPattern): Boolean = {
+    pattern.features.containsSlice(subPattern.features)
   }
-
-
-  /**
-    * Detects T-Patterns.
-    *
-    * @param patterns potential T-Patterns
-    * @return detected T-Patterns
-    */
-  protected def detectTPatterns(patterns: Seq[(TPattern, TPattern)]): Seq[TPattern]
 }
 
 
