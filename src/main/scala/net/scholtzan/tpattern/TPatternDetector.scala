@@ -1,17 +1,17 @@
 package net.scholtzan.tpattern
 
-import breeze.stats.distributions.Binomial
-import org.joda.time.DateTime
 import net.scholtzan.tpattern.utils.DateTimeUtils._
+import org.joda.time.DateTime
 
 /**
   * Detects temporal patterns in data according to the algorithms described in:
   * "Discovering Hidden Temporal Patterns in Behavior and Interaction"
   */
 abstract class TPatternDetector (
-  private var significance: Double,
-  private var minimumOccurrences: Int,
-  private var subPatternThreshold: Double) {
+  protected var significance: Double,
+  protected var minimumOccurrences: Int,
+  protected var subPatternThreshold: Double,
+  protected var criticalIntervalMeasures: CriticalIntervalMeasures) {
 
 
   /** Events to be analyzed. */
@@ -21,7 +21,7 @@ abstract class TPatternDetector (
   /**
     * Construct instance with default values.
     */
-  def this() = this(0.00001, 20, 0.7)
+  def this() = this(0.00001, 20, 0.7, new TimeBasedCriticalIntervalMeasures)
 
 
   /**
@@ -39,6 +39,7 @@ abstract class TPatternDetector (
   def setSignificance(significance: Double): this.type = {
     require(significance >= 0)
     this.significance = significance
+    this.criticalIntervalMeasures.setSignificance(significance)
     this
   }
 
@@ -78,6 +79,19 @@ abstract class TPatternDetector (
   def setSubPatternDifference(subPatternThreshold: Double): this.type = {
     require(subPatternThreshold >= 0.0 && subPatternThreshold <= 1.0)
     this.subPatternThreshold = subPatternThreshold
+    this
+  }
+
+
+  /**
+    * Sets the critical interval measures used to determine the critical interval.
+    * (default = `TimeBasedCriticalIntervalMeasures`)
+    *
+    * @return updated instance
+    */
+  def setCriticalIntervalMeasures(ciMeasures: CriticalIntervalMeasures): this.type = {
+    this.criticalIntervalMeasures = ciMeasures
+    this.criticalIntervalMeasures.setSignificance(this.significance)
     this
   }
 
@@ -218,7 +232,7 @@ abstract class TPatternDetector (
     // generate table with occurrences and distances between occurrences
     val tableWithDuplicates = patterns._1.occurrences.flatMap { startOccurrence =>
       patterns._2.occurrences.find(x => seconds(x._1) > seconds(startOccurrence._1)) match {
-        case Some(occurrence) => Some((startOccurrence._1, occurrence._2, seconds(occurrence._1) - seconds(startOccurrence._2)))
+        case Some(occurrence) => Some((startOccurrence._1, occurrence._2, criticalIntervalMeasures.distance(startOccurrence._2, occurrence._1, events)))
         case _ => None
       }
     }
@@ -227,40 +241,6 @@ abstract class TPatternDetector (
     // if different A are followed by same B then they are not included in the table (only shortest)
     // also A must only occur once
     tableWithDuplicates.groupBy(_._2).map(_._2.minBy(_._3)).toList.groupBy(_._1).map(_._2.minBy(_._3)).toList
-  }
-
-
-  /** Critical interval test.
-    *
-    * @param d1 start time unit after which second event type is starting
-    * @param d2 end time unit before which second event type is starting
-    * @param nB number of occurrences of second event types
-    * @param nA number of occurrences of first event types
-    * @param nAB  number of occurrences where first event type follows second
-    * @return whether it is a critical interval
-    */
-  protected def isCriticalInterval(d1: Double, d2: Double, nB: Double, nA: Int, nAB: Int): Boolean = {
-    significance(d1, d2, nB, nA, nAB) < significance
-  }
-
-
-  /**
-    * Calculates the significance of two pattern occurrences.
-    *
-    * @param d1 start time unit after which second event type is starting
-    * @param d2 end time unit before which second event type is starting
-    * @param nB number of occurrences of second event types
-    * @param nA number of occurrences of first event types
-    * @param nAB  number of occurrences where first event type follows second
-    * @return significance
-    */
-  protected def significance(d1: Double, d2: Double, nB: Double, nA: Int, nAB: Int): Double = {
-    val pB = nB / events.length
-    val d = d2 - d1 + 1
-
-    1 - (0 until nAB).foldLeft(0.0) { (acc, i) =>
-      acc + Binomial(nA, 1 - scala.math.pow(1 - pB, d)).probabilityOf(i)
-    }
   }
 
 
@@ -295,8 +275,9 @@ class FreeTPatternDetector extends TPatternDetector {
         var d1 = table.head._3
         var d2 = table.last._3
 
-        while (!isCriticalInterval(d1, d2, nB, nA, table.length) && table.nonEmpty) {
-          if (significance(d1, table.last._3, nB, nA, table.length) < significance(table.head._3, d2, nB, nA, table.length)) {
+        while (!criticalIntervalMeasures.isCriticalInterval(d1, d2, nB, nA, table.length, events.length) && table.nonEmpty) {
+          if (criticalIntervalMeasures.significance(d1, table.last._3, nB, nA, table.length, events.length) <
+              criticalIntervalMeasures.significance(table.head._3, d2, nB, nA, table.length, events.length)) {
             d2 = table.last._3
             table = table.init
           } else {
@@ -343,7 +324,7 @@ class FastTPatternDetector extends TPatternDetector {
 
       // determine significant patterns
       val insignificant = table.takeWhile(d2 =>
-        !isCriticalInterval(d1, d2._3, nB, nA, table.length)
+        !criticalIntervalMeasures.isCriticalInterval(d1, d2._3, nB, nA, table.length, events.length)
       )
 
       val significantPatterns = table.drop(insignificant.length)
