@@ -47,7 +47,7 @@ abstract class TPatternDetector (
   /**
     * Minimum number of occurrences of pattern so that it is considered as valid T-Pattern.
     */
-  def getMinimumOccurrences: Int = minimumOccurrences
+  def getMinimumOccurrences: Int = minimumOccurrences   // todo: scaling instead of fixed number
 
 
   /**
@@ -76,7 +76,7 @@ abstract class TPatternDetector (
     *
     * @return updated instance
     */
-  def setSubPatternDifference(subPatternThreshold: Double): this.type = {
+  def setSubPatternThreshold(subPatternThreshold: Double): this.type = {
     require(subPatternThreshold >= 0.0 && subPatternThreshold <= 1.0)
     this.subPatternThreshold = subPatternThreshold
     this
