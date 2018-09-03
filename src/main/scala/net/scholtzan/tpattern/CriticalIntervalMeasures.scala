@@ -27,6 +27,12 @@ abstract class CriticalIntervalMeasures {
   }
 
 
+  /**
+    * Returns the configured significance value.
+    */
+  def getSignificance = this.significance
+
+
   /** Critical interval test.
     *
     * @param d1 start time unit after which second event type is starting

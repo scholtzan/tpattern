@@ -5,8 +5,8 @@ import org.joda.time.DateTime
 /**
   * Input events used to detect TPatterns.
   */
-trait Event {
-  val startTime: DateTime
-  val endTime: DateTime
-  val features: Map[String, String]
-}
+case class Event(
+  startTime: DateTime,
+  endTime: DateTime,
+  features: Map[String, String]
+)
