@@ -1,13 +1,15 @@
 package net.scholtzan.tpattern
 
 import breeze.stats.distributions.Binomial
+import breeze.util.LazyLogger
+import com.typesafe.scalalogging.LazyLogging
 import net.scholtzan.tpattern.utils.DateTimeUtils._
 import org.joda.time.DateTime
 
 /**
   * Measures used to determine the critical interval between two T-Patterns.
   */
-abstract class CriticalIntervalMeasures {
+abstract class CriticalIntervalMeasures extends LazyLogging {
   /**
     * Configured significance threshold.
     */

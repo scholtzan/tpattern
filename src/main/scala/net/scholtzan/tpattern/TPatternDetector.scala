@@ -1,5 +1,6 @@
 package net.scholtzan.tpattern
 
+import com.typesafe.scalalogging.LazyLogging
 import net.scholtzan.tpattern.utils.DateTimeUtils._
 import org.joda.time.DateTime
 
@@ -8,10 +9,9 @@ import org.joda.time.DateTime
   * "Discovering Hidden Temporal Patterns in Behavior and Interaction"
   */
 abstract class TPatternDetector (
-  protected var significance: Double,
   protected var minimumOccurrences: Int,
   protected var subPatternThreshold: Double,
-  protected var criticalIntervalMeasures: CriticalIntervalMeasures) {
+  protected var criticalIntervalMeasures: CriticalIntervalMeasures) extends LazyLogging {
 
 
   /** Events to be analyzed. */
@@ -21,27 +21,7 @@ abstract class TPatternDetector (
   /**
     * Construct instance with default values.
     */
-  def this() = this(0.00001, 20, 0.7, new TimeBasedCriticalIntervalMeasures)
-
-
-  /**
-    * Significance level of critical interval.
-    */
-  def getSignificance: Double = significance
-
-
-  /**
-    * Set the significance level of the critical interval.
-    * (default = 0.00001)
-    *
-    * @return updated instance
-    */
-  def setSignificance(significance: Double): this.type = {
-    require(significance >= 0)
-    this.significance = significance
-    this.criticalIntervalMeasures.setSignificance(significance)
-    this
-  }
+  def this() = this(20, 0.7, new TimeBasedCriticalIntervalMeasures)
 
 
   /**
@@ -91,7 +71,6 @@ abstract class TPatternDetector (
     */
   def setCriticalIntervalMeasures(ciMeasures: CriticalIntervalMeasures): this.type = {
     this.criticalIntervalMeasures = ciMeasures
-    this.criticalIntervalMeasures.setSignificance(this.significance)
     this
   }
 
@@ -156,8 +135,10 @@ abstract class TPatternDetector (
   private def mergePatterns(patterns: Seq[TPattern]): Seq[TPattern] = {
     patterns.flatMap { pattern =>
       // maximum number of occurrences that pattern is sub pattern of another pattern
-      val maxOverlap = patterns.filter(_ != pattern).map { parent =>
-        if (isSubPattern(parent, pattern)) {
+      val maxOverlap = patterns.map { parent =>
+        if (pattern == parent) {
+          0
+        } else if (isSubPattern(parent, pattern)) {
           pattern.overlappingOccurrences(parent).length
         } else {
           0
@@ -165,9 +146,9 @@ abstract class TPatternDetector (
       }.max.toDouble / pattern.occurrences.length.toDouble
 
       if (maxOverlap >= subPatternThreshold) {
-        Some(pattern)
-      } else {
         None
+      } else {
+        Some(pattern)
       }
     }
   }
@@ -187,6 +168,8 @@ abstract class TPatternDetector (
     val tPatterns = detectTPatterns(patterns)
     val validatedTPatterns = completenessCompetition(detectedPatterns ++ tPatterns)
     val newDetectedPatterns = validatedTPatterns.filter(_.features.length == len + 1)
+
+    logger.debug("Validated patterns: " + validatedTPatterns)
 
     if (newDetectedPatterns.isEmpty) {
       return validatedTPatterns
@@ -256,7 +239,7 @@ abstract class TPatternDetector (
 /**
   * T-Pattern detector using the free algorithm for detection.
   */
-class FreeTPatternDetector extends TPatternDetector {
+class FreeTPatternDetector() extends TPatternDetector {
   /**
     * Uses free algorithm to detect T-Patterns.
     *
@@ -266,7 +249,7 @@ class FreeTPatternDetector extends TPatternDetector {
   override protected def detectTPatterns(patterns: Seq[(TPattern, TPattern)]): Seq[TPattern] = {
     patterns.flatMap { pattern =>
       // create distance table
-      var table = createDistanceTable(pattern).sortBy(_._3).reverse
+      var table = createDistanceTable(pattern).sortBy(_._3)
 
       val nB = pattern._2.occurrences.length
       val nA = pattern._1.occurrences.length
@@ -275,7 +258,7 @@ class FreeTPatternDetector extends TPatternDetector {
         var d1 = table.head._3
         var d2 = table.last._3
 
-        while (!criticalIntervalMeasures.isCriticalInterval(d1, d2, nB, nA, table.length, events.length) && table.nonEmpty) {
+        while (!criticalIntervalMeasures.isCriticalInterval(d1, d2, nB, nA, table.length, events.length) && table.nonEmpty && d1 < d2) {
           if (criticalIntervalMeasures.significance(d1, table.last._3, nB, nA, table.length, events.length) <
               criticalIntervalMeasures.significance(table.head._3, d2, nB, nA, table.length, events.length)) {
             d2 = table.last._3
