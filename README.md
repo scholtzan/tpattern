@@ -13,4 +13,12 @@
 
 ## Usage
 
-_Coming soon..._
+```scala
+      val ci = new TimeBasedCriticalIntervalMeasures()
+        .setSignificance(0.0001)
+      val detector = new FastTPatternDetector()
+        .setMinimumOccurrences(2)
+        .setCriticalIntervalMeasures(ci)
+        .setSubPatternThreshold(0.6)
+      val result = detector.detect(events)
+```
