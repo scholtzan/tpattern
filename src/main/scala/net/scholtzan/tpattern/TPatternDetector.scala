@@ -9,9 +9,10 @@ import org.joda.time.DateTime
   * "Discovering Hidden Temporal Patterns in Behavior and Interaction"
   */
 abstract class TPatternDetector (
-  protected var minimumOccurrences: Int,
+  protected var occurrenceThreshold: OccurrenceThreshold,
   protected var subPatternThreshold: Double,
-  protected var criticalIntervalMeasures: CriticalIntervalMeasures) extends LazyLogging {
+  protected var criticalIntervalMeasures: CriticalIntervalMeasures
+) extends LazyLogging {
 
 
   /** Events to be analyzed. */
@@ -21,24 +22,23 @@ abstract class TPatternDetector (
   /**
     * Construct instance with default values.
     */
-  def this() = this(20, 0.7, new TimeBasedCriticalIntervalMeasures)
+  def this() = this(new FixedOccurrenceThreshold(20), 0.7, new TimeBasedCriticalIntervalMeasures)
 
 
   /**
     * Minimum number of occurrences of pattern so that it is considered as valid T-Pattern.
     */
-  def getMinimumOccurrences: Int = minimumOccurrences   // todo: scaling instead of fixed number
+  def getMinimumOccurrences: OccurrenceThreshold = occurrenceThreshold
 
 
   /**
-    * Sets the number of required minimum occurrences for a pattern to be a valid T-Pattern.
-    * (default = 20)
+    * Sets the threshold required minimum occurrences for a pattern to be a valid T-Pattern.
+    * (default = FixedOccurrenceThreshold(20))
     *
     * @return updated instance
     */
-  def setMinimumOccurrences(minimumOccurrences: Int): this.type = {
-    require(minimumOccurrences >= 0)
-    this.minimumOccurrences = minimumOccurrences
+  def setOccurrenceThreshold(occurrenceThreshold: OccurrenceThreshold): this.type = {
+    this.occurrenceThreshold = occurrenceThreshold
     this
   }
 
@@ -122,7 +122,7 @@ abstract class TPatternDetector (
     */
   protected def completenessCompetition(patterns: Seq[TPattern]): Seq[TPattern] = {
     // remove redundant patterns
-    val distinctPatterns = patterns.filter(_.occurrences.length > minimumOccurrences).distinct
+    val distinctPatterns = patterns.filter(x => occurrenceThreshold.exceeded(x.occurrences.length, events.length)).distinct
     mergePatterns(distinctPatterns)
   }
 
@@ -168,8 +168,6 @@ abstract class TPatternDetector (
     val tPatterns = detectTPatterns(patterns)
     val validatedTPatterns = completenessCompetition(detectedPatterns ++ tPatterns)
     val newDetectedPatterns = validatedTPatterns.filter(_.features.length == len + 1)
-
-    logger.debug("Validated patterns: " + validatedTPatterns)
 
     if (newDetectedPatterns.isEmpty) {
       return validatedTPatterns

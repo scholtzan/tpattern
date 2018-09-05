@@ -13,14 +13,6 @@ object TPatternDetectorTests extends TestSuite {
                    Event(DateTime.parse("2018-09-02T18:47:57Z"), DateTime.parse("2018-09-02T18:47:59Z"), Map("name" -> "B")))
 
   val tests = Tests{
-    'minimumOccurrences - {
-      val detector = new FastTPatternDetector
-      detector.setMinimumOccurrences(5)
-      assert(detector.getMinimumOccurrences == 5)
-
-      intercept[IllegalArgumentException](detector.setMinimumOccurrences(-1))
-      assert(detector.getMinimumOccurrences == 5)
-    }
     'subpatternThreshold - {
       val detector = new FastTPatternDetector
       detector.setSubPatternThreshold(0.12)
@@ -37,7 +29,7 @@ object TPatternDetectorTests extends TestSuite {
       val ci = new TimeBasedCriticalIntervalMeasures()
         .setSignificance(1.0)
       val detector = new FastTPatternDetector()
-        .setMinimumOccurrences(2)
+        .setOccurrenceThreshold(new FixedOccurrenceThreshold(2))
         .setCriticalIntervalMeasures(ci)
         .setSubPatternThreshold(0.6)
       val result = detector.detect(events)
@@ -49,7 +41,7 @@ object TPatternDetectorTests extends TestSuite {
       val ci = new TimeBasedCriticalIntervalMeasures()
         .setSignificance(1.0)
       val detector = new FreeTPatternDetector()
-        .setMinimumOccurrences(2)
+        .setOccurrenceThreshold(new FixedOccurrenceThreshold(2))
         .setCriticalIntervalMeasures(ci)
         .setSubPatternThreshold(0.6)
       val result = detector.detect(events)
