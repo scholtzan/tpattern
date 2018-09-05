@@ -17,7 +17,7 @@
 val ci = new TimeBasedCriticalIntervalMeasures()
     .setSignificance(0.0001)
 val detector = new FastTPatternDetector()
-    .setMinimumOccurrences(2)
+    .setMinimumOccurrences(new FixedOccurrenceThreshold(2))
     .setCriticalIntervalMeasures(ci)
     .setSubPatternThreshold(0.6)
 val result = detector.detect(events)
